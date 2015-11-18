@@ -819,3 +819,23 @@ def CheckIntersection(interval0, interval1):
     
     else:
         return True
+
+
+##################################################
+colors = dict()
+colors['black'] = 0
+colors['red'] = 1
+colors['green'] = 2
+colors['yellow'] = 3
+colors['blue'] = 4
+colors['magenta'] = 5
+colors['cyan'] = 6
+colors['white'] = 7
+def Colorize(string, color = 'white', bold = True):
+    newstring = '\033['
+    newstring += (str(int(bold)) + ';')
+    newstring += ('3' + str(colors[color]))
+    newstring += 'm'
+    newstring += string
+    newstring += '\033[0m' # reset the subsequent text back to normal
+    return newstring
