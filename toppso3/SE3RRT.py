@@ -12,6 +12,7 @@ import Heap
 
 import lie as Lie
 import Utils as SE3Utils
+from Utils import Colorize
 import TOPP
 
 # global variables for RRTPlanners
@@ -33,15 +34,15 @@ class Config():
          qt  -- translation vector
          qts -- translational velocity
     """
-    def __init__(self, q, qt, qs = None, qts = None, qss = None, qtss = None):
+    def __init__(self, q, qt, qs=None, qts=None, qss=None, qtss=None):
         self.q = q
-        if (qs == None):
+        if qs is None:
             self.qs = zeros(3)
         else:
             self.qs = qs
 
         self.qt = qt
-        if (qts == None):
+        if qts is None:
             self.qts = zeros(3)
         else:
             self.qts = qts
@@ -68,43 +69,48 @@ class Tree():
          verticeslist -- stores all vertices added to the tree
          treetype     -- FW or BW    
     """
-    def __init__(self, treetype = FW, vroot = None):
-        if (vroot == None):
+    def __init__(self, treetype=FW, vroot=None):
+        if vroot is None:
             self.verticeslist = []
         else:
             self.verticeslist = [vroot]
         self.treetype = treetype
 
+        
     def __len__(self):
         return len(self.verticeslist)
 
+    
     def __getitem__(self, index):
         return self.verticeslist[index]        
-                    
+    
+    
     def AddVertex(self, parent, traj, trajtran, vnew):
         vnew.parent = parent
         vnew.traj = traj
         vnew.trajtran = trajtran
         self.verticeslist.append(vnew)
 
+        
     def GenTrajList(self):
         trajlist = []
         if (self.treetype == FW):
             vertex = self.verticeslist[-1]
             parent = vertex.parent
-            while (vertex.parent != None):
+            while (vertex.parent is not None):
                 trajlist.append(vertex.traj)
                 vertex = parent
-                if (vertex.parent != None):
+                if (vertex.parent is not None):
                     parent = vertex.parent
             trajlist = trajlist[::-1]
         else:
             vertex = self.verticeslist[-1]
-            while (vertex.parent != None):
+            while (vertex.parent is not None):
                 trajlist.append(vertex.traj)
-                if (vertex.parent != None):
+                if (vertex.parent is not None):
                     vertex = vertex.parent
         return trajlist
+    
     
     def GenRotationMatList(self):
         RotationMatList = []
@@ -112,37 +118,38 @@ class Tree():
             vertex = self.verticeslist[-1]
             RotationMatList.append(rotationMatrixFromQuat(vertex.config.q))
             parent = vertex.parent
-            while (vertex.parent != None):
+            while (vertex.parent is not None):
                 RotationMatList.append(rotationMatrixFromQuat(parent.config.q))
                 vertex = parent
-                if (vertex.parent != None):
+                if (vertex.parent is not None):
                     parent = vertex.parent
             RotationMatList =  RotationMatList[::-1]
         else:
             vertex = self.verticeslist[-1]
             RotationMatList.append(rotationMatrixFromQuat(vertex.config.q))
-            while (vertex.parent != None):
+            while (vertex.parent is not None):
                 RotationMatList.append(rotationMatrixFromQuat(vertex.parent.config.q))
-                if (vertex.parent != None):
+                if (vertex.parent is not None):
                     vertex = vertex.parent
         return RotationMatList
 
+    
     def GenTrajTranString(self):
         trajtranlist = []
         if (self.treetype == FW):
             vertex = self.verticeslist[-1]
             parent = vertex.parent
-            while (vertex.parent != None):
+            while (vertex.parent is not None):
                 trajtranlist.append(vertex.trajtran)
                 vertex = parent
-                if (vertex.parent != None):
+                if (vertex.parent is not None):
                     parent = vertex.parent
             trajtranlist = trajtranlist[::-1]
         else:
             vertex = self.verticeslist[-1]
-            while (vertex.parent != None):
+            while (vertex.parent is not None):
                 trajtranlist.append(vertex.trajtran)
-                if (vertex.parent != None):
+                if (vertex.parent is not None):
                     vertex = vertex.parent
         trajectorytranstring = ''
         for i in range(len(trajtranlist)):
@@ -200,18 +207,18 @@ class RRTPlanner():
         ret += "Total number of iterations :" + str(self.iterations)
         return ret
 
+    
     def RandomConfig(self):
         """RandomConfig samples a random configuration uniformly from
         the quaternion unit sphere in four dimensions.
-        """
-        
-        q_rand = lie.RandomQuat()
+        """        
+        q_rand = Lie.RandomQuat()
         qs_rand = np.array([1e-3, 1e-3, 1e-3])
         
         qt_rand = []
         for i in xrange(3):
-            qt_rand.append(self.RNG.uniform(self.lowertlimits[i], 
-                                            self.uppertlimits[i]))
+            qt_rand.append(self._RNG.uniform(self.lowertlimits[i], 
+                                             self.uppertlimits[i]))
         qts_rand = np.zeros(3)
 
         return Config(q_rand, qt_rand, qs_rand, qts_rand)
@@ -255,17 +262,20 @@ class RRTPlanner():
             ## check feasibility of c_new
             if (not self.IsFeasibleConfig(c_new)):
                 if self.PRINT:
-                    print '[ExtandFW] TRAPPED (infeasible configuration)'
+                    print '    [ExtendFW] TRAPPED (infeasible configuration)'
                 STATUS = TRAPPED
                 continue            
             
             ## interpolate a trajectory
-            trajectory = lie.InterpolateSO3(rotationMatrixFromQuat(q_beg),
+            trajectory = Lie.InterpolateSO3(rotationMatrixFromQuat(q_beg),
                                             rotationMatrixFromQuat(q_end),
                                             qs_beg, qs_end, self.INTERPOLATIONDURATION)
-            trajectorytranstring = Utils.TrajString3rdDegree(qt_beg, qt_end, qts_beg, qts_end, self.INTERPOLATIONDURATION)
+            trajectorytranstring = SE3Utils.TrajString3rdDegree\
+            (qt_beg, qt_end, qts_beg, qts_end, self.INTERPOLATIONDURATION)
+            
             ## check feasibility ( collision checking for the trajectory)
-            result = self.IsFeasibleTrajectory(trajectory, trajectorytranstring, q_beg, qt_beg, FW) 
+            result = self.IsFeasibleTrajectory(trajectory, trajectorytranstring, 
+                                               q_beg, qt_beg, FW) 
             if (result[0] == OK):
                   ## extension is now successful
                 v_new = Vertex(c_new, FW)
@@ -273,11 +283,13 @@ class RRTPlanner():
                 self.treestart.AddVertex(v_near, trajectory, trajectorytranstring, v_new)
                 return STATUS
             else:
-                STATUS = TRAPPED  #trajecory doesnt satify the collision-free constraint
+                if self.PRINT:
+                    print '    [ExtendFW] TRAPPED (trajectory in collision)'
+                STATUS = TRAPPED
         return STATUS
+    
 
     def ExtendBW(self, c_rand):
-        # Implement NearestneiborIndices return the list of nodes in order of increasing distance
         nnindices = self.NearestNeighborIndices(c_rand, BW)
         for index in nnindices:
             v_near = self.treeend.verticeslist[index]
@@ -287,7 +299,6 @@ class RRTPlanner():
             qt_end = v_near.config.qt
             qts_end = v_near.config.qts
             ## check if c_rand is too far from vnear
-            ## if the new ramdonly-chose node is close, it's safer . Or in another words, the interpolated path will have more chances that it won't collide with the obstacles
             delta = self.Distance(v_near.config, c_rand)
             if (delta <= self.STEPSIZE):
                 q_beg = c_rand.q
@@ -300,21 +311,26 @@ class RRTPlanner():
 
             qt_beg = c_rand.qt
             qts_beg = c_rand.qts
-            c_new = Config(q_beg, qt_beg, qs_beg, qts_beg )
+            c_new = Config(q_beg, qt_beg, qs_beg, qts_beg)
             
             ## check feasibility of c_new
-            if (not self.IsFeasibleConfig(c_new)): ####################?????????
-                # print "status : TRAPPED (infeasible configuration)"
+            if (not self.IsFeasibleConfig(c_new)):
+                if self.PRINT:
+                    print '    [ExtendBW] TRAPPED (infeasible configuration)'
                 STATUS = TRAPPED
                 continue            
 
             ## interpolate a trajectory
-            # trajectory = lie.InterpolateSO3ZeroOmega(rotationMatrixFromQuat(q_beg),rotationMatrixFromQuat(q_end),self.INTERPOLATIONDURATION)
-            trajectory = lie.InterpolateSO3(rotationMatrixFromQuat(q_beg),rotationMatrixFromQuat(q_end),qs_beg,qs_end,self.INTERPOLATIONDURATION)
+            trajectory = Lie.InterpolateSO3(rotationMatrixFromQuat(q_beg),
+                                            rotationMatrixFromQuat(q_end),
+                                            qs_beg, qs_end, self.INTERPOLATIONDURATION)
 
-            trajectorytranstring = Utils.TrajString3rdDegree(qt_beg, qt_end, qts_beg, qts_end, self.INTERPOLATIONDURATION)
+            trajectorytranstring = SE3Utils.TrajString3rdDegree\
+            (qt_beg, qt_end, qts_beg, qts_end, self.INTERPOLATIONDURATION)
+            
             ## check feasibility ( collision checking for the trajectory)
-            result = self.IsFeasibleTrajectory(trajectory, trajectorytranstring, q_beg, qt_beg, BW)
+            result = self.IsFeasibleTrajectory(trajectory, trajectorytranstring, 
+                                               q_beg, qt_beg, BW)
             if (result[0] == OK):
                 ## extension is now successful
                 v_new = Vertex(c_new, BW)
@@ -322,7 +338,9 @@ class RRTPlanner():
                 self.treeend.AddVertex(v_near, trajectory,trajectorytranstring, v_new)
                 return STATUS
             else:
-                STATUS = TRAPPED  #trajecory doesnt satify the collision-free constraint
+                if self.PRINT:
+                    print '    [ExtendBW] TRAPPED (trajectory in collision)'
+                STATUS = TRAPPED
         return STATUS
 
 
@@ -346,25 +364,29 @@ class RRTPlanner():
             qt_beg = v_near.config.qt
             qts_beg = v_near.config.qts
 
-
             q_end = v_test.config.q
             qs_end = v_test.config.qs
             qt_end = v_test.config.qt
             qts_end = v_test.config.qts
-             ## interpolate a trajectory
-            #trajectory = lie.InterpolateSO3ZeroOmega(rotationMatrixFromQuat(q_beg),rotationMatrixFromQuat(q_end),self.INTERPOLATIONDURATION)
-            trajectory = lie.InterpolateSO3(rotationMatrixFromQuat(q_beg),rotationMatrixFromQuat(q_end),qs_beg,qs_end,self.INTERPOLATIONDURATION)
-            trajectorytranstring = Utils.TrajString3rdDegree(qt_beg, qt_end, qts_beg, qts_end, self.INTERPOLATIONDURATION)
             
-             ## check feasibility ( collision checking for the trajectory)
-            result = self.IsFeasibleTrajectory(trajectory, trajectorytranstring, q_beg, qt_beg, FW)
+            ## interpolate a trajectory
+            trajectory = Lie.InterpolateSO3(rotationMatrixFromQuat(q_beg),
+                                            rotationMatrixFromQuat(q_end),
+                                            qs_beg, qs_end, self.INTERPOLATIONDURATION)
+            trajectorytranstring = SE3Utils.TrajString3rdDegree\
+            (qt_beg, qt_end, qts_beg, qts_end, self.INTERPOLATIONDURATION)
+            
+            ## check feasibility (collision checking for the trajectory)
+            result = self.IsFeasibleTrajectory(trajectory, trajectorytranstring, 
+                                               q_beg, qt_beg, FW)
             if (result[0] == 1):
-                 ## conection is now successful
+                ## conection is now successful
                 self.treestart.verticeslist.append(v_near)
                 self.connectingtraj = trajectory
                 self.connectingtrajtran = trajectorytranstring
                 return REACHED
         return TRAPPED
+    
 
     def ConnectBW(self):
         v_test = self.treestart.verticeslist[-1]
@@ -383,11 +405,15 @@ class RRTPlanner():
             qts_beg = v_test.config.qts
 
             ## interpolate a trajectory
-            #trajectory = lie.InterpolateSO3ZeroOmega(rotationMatrixFromQuat(q_beg),rotationMatrixFromQuat(q_end),self.INTERPOLATIONDURATION)
-            trajectory = lie.InterpolateSO3(rotationMatrixFromQuat(q_beg),rotationMatrixFromQuat(q_end),qs_beg,qs_end,self.INTERPOLATIONDURATION)
-            trajectorytranstring = Utils.TrajString3rdDegree(qt_beg, qt_end, qts_beg, qts_end, self.INTERPOLATIONDURATION)
-             ## check feasibility ( collision checking for the trajectory)
-            result = self.IsFeasibleTrajectory(trajectory,trajectorytranstring, q_beg, qt_beg, BW)
+            trajectory = Lie.InterpolateSO3(rotationMatrixFromQuat(q_beg),
+                                            rotationMatrixFromQuat(q_end),
+                                            qs_beg, qs_end, self.INTERPOLATIONDURATION)
+            trajectorytranstring = SE3Utils.TrajString3rdDegree\
+            (qt_beg, qt_end, qts_beg, qts_end, self.INTERPOLATIONDURATION)
+            
+            ## check feasibility (collision checking for the trajectory)
+            result = self.IsFeasibleTrajectory(trajectory, trajectorytranstring, 
+                                               q_beg, qt_beg, BW)
             if (result[0] == 1):
                  ## conection is now successful
                 self.treeend.verticeslist.append(v_near)
@@ -395,6 +421,7 @@ class RRTPlanner():
                 self.connectingtrajtran = trajectorytranstring
                 return REACHED
         return TRAPPED
+    
 
     def IsFeasibleConfig(self, c_rand):
         """IsFeasibleConfig checks feasibility of the given Config object. 
@@ -402,40 +429,38 @@ class RRTPlanner():
         """
         env = self.robot.GetEnv()
         with self.robot:
-            print "c_rand.q"
-            print c_rand.q
-            print np.linalg.norm(q)
             transformation = eye(4)
             transformation[0:3,0:3] = rotationMatrixFromQuat(c_rand.q)
             transformation[0:3,3] = c_rand.qt
             self.robot.SetTransform(transformation)
             isincollision = (env.CheckCollision(self.robot, CollisionReport()))
             if (isincollision):
-                # print "\t in-collision"
                 return False
             else:
                 return True
 
 
-    def IsFeasibleTrajectory(self, trajectory, trajectorytranstring, q_beg, qt_beg, direction):
+    def IsFeasibleTrajectory(self, trajectory, trajectorytranstring, 
+                             q_beg, qt_beg, direction):
         """IsFeasibleTrajectory checks feasibility of the given trajectory.
         Feasibility conditions are to be determined by each RRT planner.
         """
         ## check collision
         env = self.robot.GetEnv()
-        #traj = Trajectory.PiecewisePolynomialTrajectory.FromString(trajectory)
         traj = trajectory
         R_beg =  rotationMatrixFromQuat(q_beg)
-        trajtran = Trajectory.PiecewisePolynomialTrajectory.FromString(trajectorytranstring)
+        trajtran = TOPP.Trajectory.PiecewisePolynomialTrajectory.FromString\
+        (trajectorytranstring)
+        
         for s in np.arange(0, traj.duration, self.discrtimestep):
             with self.robot:
                 transformation = eye(4)
-                transformation[0:3,0:3] = lie.EvalRotation(R_beg, traj, s)
+                transformation[0:3,0:3] = Lie.EvalRotation(R_beg, traj, s)
                 transformation[0:3,3] = trajtran.Eval(s)
  
                 self.robot.SetTransform(transformation)
                 isincollision = (env.CheckCollision(self.robot, CollisionReport()))
-                # print  "s =", s, " ", isincollision
+                
             if (isincollision):
                 return [INCOLLISION]
 
@@ -458,30 +483,41 @@ class RRTPlanner():
 
         t = 0.0
         prev_it = self.iterations
+        it = 0
 
         while (t < allottedtime):
+            it += 1
             self.iterations += 1
-            # print "\033[1;34miteration:", self.iterations, "\033[0m"
+            print Colorize('iteration : {0}'.format(it), 'blue')
             t_begin = time.time()
             
             c_rand = self.RandomConfig()
             if (self.Extend(c_rand) != TRAPPED):
-                print "\033[1;32mTree start : ", len(self.treestart.verticeslist), 
-                print "; Tree end : ", len(self.treeend.verticeslist), "\033[0m"
+                print Colorize('Tree start : {0}; Tree end : {1}'.\
+                                   format(len(self.treestart.verticeslist), 
+                                          len(self.treeend.verticeslist)),
+                               'green')
+                
                 if (self.Connect() == REACHED):
-                    print "\033[1;32mPath found"
-                    print "    Total number of iterations:", self.iterations
+                    print Colorize('Path found', 'green')
+                    print Colorize('    Total number of iterations : {0}'.format\
+                                       (self.iterations), 'green')
                     t_end = time.time()
                     t += t_end - t_begin
                     self.runningtime += t
-                    print "    Total running time:", self.runningtime, "sec.", "\033[0m"
+                    print Colorize('    Total running time : {0} sec.'.format\
+                                       (self.runningtime), 'green')
                     self.result = True
-                    return True
+                    return self.result
+                
             t_end = time.time()
             t += t_end - t_begin
             self.runningtime += t_end - t_begin
-        print "\033[1;31mAllotted time (", allottedtime, " sec.) is exhausted after", self.iterations - prev_it, "iterations.", "\033[0m"
-        return False
+            
+        print Colorize('Allotted time {0} sec. is exhausted after {1} iterations'.\
+                           format(allottedtime, self.iterations - prev_it))
+        
+        return self.result
 
 
     def Distance(self, c_test0, c_test1):
@@ -493,12 +529,12 @@ class RRTPlanner():
         X0[:3,3] = c_test0.qt
         X1[:3,:3] = rotationMatrixFromQuat(c_test1.q)
         X1[:3,3] = c_test1.qt
-        return Utils.SE3Distance(X0, X1,1/pi, 1)
+        return SE3Utils.SE3Distance(X0, X1,1/pi, 1)
 
         
     def NearestNeighborIndices(self, c_rand, treetype, custom_nn = 0):
-        """NearestNeighborIndices returns indices of self.nn nearest neighbors of c_rand 
-        on the tree specified by treetype.
+        """NearestNeighborIndices returns indices of self.nn nearest
+        neighbors of c_rand on the tree specified by treetype.
         """
         if (treetype == FW):
             tree = self.treestart
