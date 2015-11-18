@@ -8,15 +8,11 @@ import numpy as np
 import copy
 import random
 import os
-
-import lie
-
-import Utils
 import Heap
 
+import lie as Lie
+import Utils as SE3Utils
 import TOPP
-from TOPP import TOPPpy
-from TOPP import Trajectory
 
 # global variables for RRTPlanners
 FW = 0
@@ -124,7 +120,7 @@ class Tree():
             RotationMatList =  RotationMatList[::-1]
         else:
             vertex = self.verticeslist[-1]
-            RotationMatList.append(rotationMatrixFromQuat(vertex.config.q))                       
+            RotationMatList.append(rotationMatrixFromQuat(vertex.config.q))
             while (vertex.parent != None):
                 RotationMatList.append(rotationMatrixFromQuat(vertex.parent.config.q))
                 if (vertex.parent != None):
@@ -163,13 +159,14 @@ class RRTPlanner():
     TRAPPED = 2
 
     def __init__(self, vertex_start, vertex_goal, robot):
-        """Initialize a planner. RRTPlanner always has two trees. For a unidirectional planner, 
-        the treeend will not be extended and always has only one vertex, vertex_goal.        
+        """Initialize a planner. RRTPlanner always has two trees. For
+        a unidirectional planner, the treeend will not be extended and
+        always has only one vertex, vertex_goal.
         """        
         # np.random.seed(np.random.randint(0, 10))
         ## need more unpredictable sequence than that generated from np.random
-        self.RANDOM_NUMBER_GENERATOR = random.SystemRandom()
-        
+        self._RNG = random.SystemRandom()
+        self.robot = robot
         self.treestart = Tree(FW, vertex_start)
         self.treeend = Tree(BW, vertex_goal)
         self.connectingtraj = []
@@ -182,11 +179,21 @@ class RRTPlanner():
         # DEFAULT PARAMETERS  
         self.STEPSIZE = 0.7
         self.INTERPOLATIONDURATION = 0.5
-        
-        #Openrave paras
-        self.robot = robot
-        
+        self.PRINT = True
         self.discrtimestep = 1e-2 ## for collision checking, etc.
+        self._settranslationallimits = False
+        
+        
+    def SetTranslationalLimits(self, upper, lower=[]):
+        self.uppertlimits = upper
+        if len(lower) == 0:
+            self.lowertlimits = -1.0*self.uppertlimits
+        else:
+            self.lowertlimits = lower
+        if self.lowertlimits[2] < 0:
+            self.lowertlimits[2] = 0
+        self._settranslationallimits = True
+
 
     def __str__(self):
         ret = "Total running time :" + str(self.runningtime) + "sec.\n"
@@ -194,20 +201,21 @@ class RRTPlanner():
         return ret
 
     def RandomConfig(self):
-        """RandomConfig samples a random configuration uniformly from the quaternion unit sphere in four dimensions."""
+        """RandomConfig samples a random configuration uniformly from
+        the quaternion unit sphere in four dimensions.
+        """
         
         q_rand = lie.RandomQuat()
-        vellowerlimit = -5 ##
-        velupperlimit = 5  ##
-        # qs_rand = np.zeros(3)
-        qs_rand = np.array([1e-1,1e-1,1e-1])
-        # for i in range(3):
-        #    qs_rand[i] = self.RANDOM_NUMBER_GENERATOR.uniform(vellowerlimit,velupperlimit) 
+        qs_rand = np.array([1e-3, 1e-3, 1e-3])
         
-        qt_rand = 0.05*np.random.rand(3) 
+        qt_rand = []
+        for i in xrange(3):
+            qt_rand.append(self.RNG.uniform(self.lowertlimits[i], 
+                                            self.uppertlimits[i]))
         qts_rand = np.zeros(3)
 
-        return Config(q_rand,qt_rand, qs_rand, qts_rand)
+        return Config(q_rand, qt_rand, qs_rand, qts_rand)
+    
 
     def Extend(self, c_rand):
         if (np.mod(self.iterations - 1, 2) == FW):
@@ -217,6 +225,7 @@ class RRTPlanner():
             ## treeend is to be extended
             res = self.ExtendBW(c_rand)
         return res
+
 
     def ExtendFW(self, c_rand):
         nnindices = self.NearestNeighborIndices(c_rand, FW)
@@ -229,7 +238,6 @@ class RRTPlanner():
             qts_beg = v_near.config.qts
 
             ## check if c_rand is too far from vnear
-            ## if the new ramdonly-chose node is close, it's safer . Or in another words, the interpolated path will have more chances that it won't collide with the obstacles
             delta = self.Distance(v_near.config, c_rand)
             if (delta <= self.STEPSIZE):
                 q_end = c_rand.q
@@ -246,13 +254,15 @@ class RRTPlanner():
 
             ## check feasibility of c_new
             if (not self.IsFeasibleConfig(c_new)):
-                # print "status : TRAPPED (infeasible configuration)"
+                if self.PRINT:
+                    print '[ExtandFW] TRAPPED (infeasible configuration)'
                 STATUS = TRAPPED
                 continue            
             
             ## interpolate a trajectory
-            #trajectory = lie.InterpolateSO3ZeroOmega(rotationMatrixFromQuat(q_beg),rotationMatrixFromQuat(q_end),self.INTERPOLATIONDURATION)
-            trajectory = lie.InterpolateSO3(rotationMatrixFromQuat(q_beg),rotationMatrixFromQuat(q_end),qs_beg,qs_end,self.INTERPOLATIONDURATION)
+            trajectory = lie.InterpolateSO3(rotationMatrixFromQuat(q_beg),
+                                            rotationMatrixFromQuat(q_end),
+                                            qs_beg, qs_end, self.INTERPOLATIONDURATION)
             trajectorytranstring = Utils.TrajString3rdDegree(qt_beg, qt_end, qts_beg, qts_end, self.INTERPOLATIONDURATION)
             ## check feasibility ( collision checking for the trajectory)
             result = self.IsFeasibleTrajectory(trajectory, trajectorytranstring, q_beg, qt_beg, FW) 
@@ -392,6 +402,9 @@ class RRTPlanner():
         """
         env = self.robot.GetEnv()
         with self.robot:
+            print "c_rand.q"
+            print c_rand.q
+            print np.linalg.norm(q)
             transformation = eye(4)
             transformation[0:3,0:3] = rotationMatrixFromQuat(c_rand.q)
             transformation[0:3,3] = c_rand.qt
