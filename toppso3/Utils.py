@@ -1,48 +1,52 @@
-from openravepy import *
+import openravepy as orpy
 from pylab import *
+import numpy as np
 
-from numpy import *
-
-import lie
-import time 
+import lie as Lie
+import time
 
 import string
 import StringIO
 
 import TOPP
-from TOPP import TOPPpy
 from TOPP import TOPPbindings
 from TOPP import Trajectory
 from TOPP import Utilities
 
-import pdb ########################
 import matplotlib.pyplot as plt
 
+import random
+_RNG = random.SystemRandom()
 
 def QuatDistance(quat0, quat1): 
     rotationweight = 1
-    innerProduct = dot(quat0,quat1)
-    quatDistance = rotationweight*(1-abs(innerProduct))
+    innerProduct = np.dot(quat0, quat1)
+    quatDistance = rotationweight*(1 - abs(innerProduct))
     return quatDistance
 
+
 def SO3Distance(R0, R1): # bi-invariance
-    return linalg.norm(lie.logvect(dot(R0.T,R1)))
+    return np.linalg.norm(Lie.logvect(np.dot(R0.T, R1)))
+
 
 def R3Distance(b0, b1):
-    return linalg.norm(b1-b0)
+    return np.linalg.norm(b1 - b0)
 
-def SE3Distance(X0, X1, c = None, d = None): # left invariance
-    R0 = X0[:3,:3]
-    R1 = X1[:3,:3]
-    b0 = X0[:3,3]
-    b1 = X1[:3,3]
-    if (c == None):
+def SE3Distance(X0, X1, c=None, d=None): # left invariance
+    R0 = X0[:3, :3]
+    R1 = X1[:3, :3]
+    b0 = X0[:3, 3]
+    b1 = X1[:3, 3]
+    if c is None:
         c = 1
-    else: c = c
-    if (d == None):
+    else: 
+        c = c
+    if d is None:
         d = 1
-    else: d = d
-    return sqrt(c*(SO3Distance(R0,R1)**2) + d*(R3Distance(b0,b1)**2))
+    else: 
+        d = d
+    return np.sqrt(c*(SO3Distance(R0, R1)**2) + d*(R3Distance(b0, b1)**2))
+
     
 ################## interpolate translation ####################################
 def TrajString3rdDegree(q_beg, q_end, qs_beg, qs_end, duration):
@@ -52,12 +56,13 @@ def TrajString3rdDegree(q_beg, q_end, qs_beg, qs_end, duration):
     trajectorystring += "%f\n%d"%(duration, ndof)
 
     for k in range(ndof):
-        a, b, c, d = Utilities.Interpolate3rdDegree(q_beg[k], q_end[k], qs_beg[k], qs_end[k], duration)
+        a, b, c, d = Utilities.Interpolate3rdDegree(q_beg[k], q_end[k], 
+                                                    qs_beg[k], qs_end[k], duration)
         trajectorystring += "\n%f %f %f %f"%(d, c, b, a)
     return trajectorystring
 
-#################### SE3 traj ##################################################
 
+#################### SE3 traj ##################################################
 def SE3TrajFromTransandSO3(transtraj, rtraj): # same chunk.duration
     #return duration-dimension-trans polynomial- rot polynomial
     if len(transtraj.chunkslist) != len(rtraj.chunkslist):
@@ -75,6 +80,7 @@ def SE3TrajFromTransandSO3(transtraj, rtraj): # same chunk.duration
         clist.append(chunk)
     return Trajectory.PiecewisePolynomialTrajectory(clist)
 
+
 ###################### Decompose SE3 traj to ROT and Trans traj ################
 def TransRotTrajFromSE3Traj(SE3traj):
     transclist = []
@@ -88,12 +94,13 @@ def TransRotTrajFromSE3Traj(SE3traj):
     rtraj = Trajectory.PiecewisePolynomialTrajectory(rclist)
     return transtraj, rtraj
 
+
 ##########################SE3 constraint ########################################
-def ComputeSE3Constraints(SE3traj, taumax, fmax, discrtimestep, I = None, m = None):
+def ComputeSE3Constraints(SE3traj, taumax, fmax, discrtimestep, I=None, m=None):
     ndiscrsteps = int((SE3traj.duration + 1e-10) / discrtimestep) + 1
-    a = zeros((ndiscrsteps,12))
-    b = zeros((ndiscrsteps,12))
-    c = zeros((ndiscrsteps,12))
+    a = zeros((ndiscrsteps, 12))
+    b = zeros((ndiscrsteps, 12))
+    c = zeros((ndiscrsteps, 12))
     transtraj, rtraj = TransRotTrajFromSE3Traj(SE3traj)
     for i in range(ndiscrsteps):
         #rotconstraints
@@ -101,38 +108,39 @@ def ComputeSE3Constraints(SE3traj, taumax, fmax, discrtimestep, I = None, m = No
         r = rtraj.Eval(t)
         rd = rtraj.Evald(t)
         rdd = rtraj.Evaldd(t)
-        nr = linalg.norm(r)
+        nr = np.linalg.norm(r)
         nr2 = nr*nr
         nr3 = nr2*nr
         nr4 = nr3*nr
         nr5 = nr4*nr
-        R = lie.skewfromvect(r)
+        R = Lie.skewfromvect(r)
 
-        snr = sin(nr)
-        cnr = cos(nr)
-        rcrd = cross(r,rd)
-        rdrd = dot(r,rd)
+        snr = np.sin(nr)
+        cnr = np.cos(nr)
+        rcrd = np.cross(r,rd)
+        rdrd = np.dot(r,rd)
 
-        Amat =  eye(3) - (1-cnr)/nr2*R + (nr-snr)/nr3*dot(R,R)
-        C1 = (nr-snr)/nr3 * cross(rd,rcrd)
-        C2 = -(2*cnr+nr*snr-2)/nr4 * rdrd*rcrd
-        C3 = (3*snr-nr*cnr - 2*nr)/nr5 * rdrd*cross(r,rcrd)
-        C = C1+C2+C3
+        Amat =  eye(3) - (1 - cnr)/nr2*R + (nr - snr)/nr3*np.dot(R, R)
+        C1 = (nr - snr)/nr3 * np.cross(rd, rcrd)
+        C2 = -(2*cnr + nr*snr - 2)/nr4 * rdrd*rcrd
+        C3 = (3*snr - nr*cnr - 2*nr)/nr5 * rdrd*cross(r, rcrd)
+        C = C1 + C2 + C3
 
-        Ard = dot(Amat,rd)
+        Ard = np.dot(Amat, rd)
         if I is None:            
             at = Ard
-            bt = dot(Amat,rdd) + C
+            bt = np.dot(Amat, rdd) + C
         else:
-            at = dot(I,Ard)
-            bt = dot(I,dot(Amat,rdd)) + dot(I,C) + cross(Ard,dot(I,Ard))
+            at = np.dot(I, Ard)
+            bt = (np.dot(I, np.dot(Amat, rdd)) + np.dot(I, C) + 
+                  np.cross(Ard, np.dot(I, Ard)))
         
-        a[i,3:6] = at
-        a[i,9:12] = -at
-        b[i,3:6] = bt
-        b[i,9:12] = -bt
-        c[i,3:6] = -taumax
-        c[i,9:12] = -taumax
+        a[i, 3:6] = at
+        a[i, 9:12] = -at
+        b[i, 3:6] = bt
+        b[i, 9:12] = -bt
+        c[i, 3:6] = -taumax
+        c[i, 9:12] = -taumax
 
         #transconstraints
         td = transtraj.Evald(t)
@@ -141,35 +149,35 @@ def ComputeSE3Constraints(SE3traj, taumax, fmax, discrtimestep, I = None, m = No
             at = td
             bt = tdd
 
-        a[i,:3] = at
-        a[i,6:9] = -at
-        b[i,:3] = bt
-        b[i,6:9] = -bt
-        c[i,:3] = -fmax
-        c[i,6:9] = -fmax
+        a[i, :3] = at
+        a[i, 6:9] = -at
+        b[i, :3] = bt
+        b[i, 6:9] = -bt
+        c[i, :3] = -fmax
+        c[i, 6:9] = -fmax
     return a, b, c
 
-######################## se3 traj collision checking ########################
 
-def CheckCollisionSE3Traj( robot, transtraj, rtraj, R_beg,  checkcollisiontimestep = 1e-3):
-    """CheckCollisionSE3Traj accepts a robot and trans, rot trajectory object as its inputs.
-       (checkcollisiontimestep is set to 1e-3 as a default value)
-       It returns True if any config along the traj is IN-COLLISION.
+######################## se3 traj collision checking ########################
+def CheckCollisionSE3Traj( robot, transtraj, rtraj, R_beg, checkcollisiontimestep=1e-3):
+    """CheckCollisionSE3Traj accepts a robot and trans, rot trajectory
+       object as its inputs.  (checkcollisiontimestep is set to 1e-3
+       as a default value) It returns True if any config along the
+       traj is IN-COLLISION.
     """
     env = robot.GetEnv()
     for s in np.arange(0, transtraj.duration, checkcollisiontimestep):
         with robot:
             transformation = eye(4)
-            transformation[0:3,0:3] = lie.EvalRotation(R_beg, rtraj, s)
-            transformation[0:3,3] = transtraj.Eval(s)
+            transformation[0:3, 0:3] = Lie.EvalRotation(R_beg, rtraj, s)
+            transformation[0:3, 3] = transtraj.Eval(s)
             robot.SetTransform(transformation)           
-            isincollision = (env.CheckCollision(robot, CollisionReport()))
-            #print  "s =", s, " ", isincollision
+            isincollision = (env.CheckCollision(robot, orpy.CollisionReport()))
             if (isincollision):
                 return True
     with robot:
         robot.SetTransform(transformation)
-        isincollision = (env.CheckCollision(robot, CollisionReport()))
+        isincollision = (env.CheckCollision(robot, orpy.CollisionReport()))
         if (isincollision):
             return True
         else:
@@ -177,7 +185,8 @@ def CheckCollisionSE3Traj( robot, transtraj, rtraj, R_beg,  checkcollisiontimest
 
 
 ######################### SE3 shortcutting ##################################
-def SE3Shortcut(robot, taumax, fmax, vmax, se3traj, Rlist, maxiter, expectedduration = -1,  meanduration = 0, upperlimit = -1, plotdura = None):
+def SE3Shortcut(robot, taumax, fmax, vmax, se3traj, Rlist, maxiter, 
+                expectedduration=-1,  meanduration=0, upperlimit=-1, plotdura=None):
     if plotdura == 1:
         plt.axis([0, maxiter, 0, se3traj.duration])
         plt.ion()
@@ -187,7 +196,6 @@ def SE3Shortcut(robot, taumax, fmax, vmax, se3traj, Rlist, maxiter, expecteddura
 
     t_sc_start = time.time()
     originalduration =  se3traj.duration
-    #return shortcuted traj
     if upperlimit < 0:
         dur = se3traj.duration
         upperlimit = se3traj.duration
@@ -207,7 +215,7 @@ def SE3Shortcut(robot, taumax, fmax, vmax, se3traj, Rlist, maxiter, expecteddura
     nnotshorter = 0
     
     transtraj, rtraj = TransRotTrajFromSE3Traj(se3traj)
-    lietraj = lie.SplitTraj(Rlist, rtraj)
+    lietraj = Lie.SplitTraj(Rlist, rtraj)
    
 
     for it in range(maxiter):
@@ -215,30 +223,33 @@ def SE3Shortcut(robot, taumax, fmax, vmax, se3traj, Rlist, maxiter, expecteddura
             plt.scatter(it, se3traj.duration)
             plt.draw()
         #transtraj, rtraj = TransRotTrajFromSE3Traj(se3traj)
-        #lietraj = lie.SplitTraj2(Rlist, rtraj)
-        if (expectedduration > 0): # check, if newlietraj.duration is short enough, stop SHORTCUTING
+        #lietraj = Lie.SplitTraj2(Rlist, rtraj)
+        if (expectedduration > 0): # check, if newlietraj.duration is
+                                   # short enough, stop SHORTCUTING
             if (se3traj.duration < expectedduration):
-                print "\033[1;32mTrajectory's duration is already shorter than expected time --> stop shortcuting\033[0m"
+                print Colorize('Trajectory duration is already too short', 'yellow')
+                print Colorize('Stop shortcutting', 'yellow')
                 break
+            
         if (dur < discrtimestep):
             print "[Utils::Shortcut] trajectory duration is less than discrtimestep.\n"
             break ## otherwise, this will cause an error in TOPP        
         
         ## select an interval for shortcutting
-        t0 = random.rand()* dur
+        t0 = _RNG.random()* dur
         
         if meanduration == 0:
             meanduration = dur - t0
             
-        T = random.rand()*min(meanduration,dur - t0)
+        T = _RNG.random()*min(meanduration,dur - t0)
         t1 = t0 + T
 
         while (T < 2.0*discrtimestep):
-            t0 = random.rand()*dur
+            t0 = _RNG.random()*dur
             if meanduration == 0:
                 meanduration = dur - t0
                 
-            T = random.rand()*min(meanduration, dur - t0)
+            T = _RNG.random()*min(meanduration, dur - t0)
             t1 = t0 + T
 
             if t1 > upperlimit:
@@ -256,40 +267,50 @@ def SE3Shortcut(robot, taumax, fmax, vmax, se3traj, Rlist, maxiter, expecteddura
         R_end = lietraj.EvalRotation(t1)
         omega0 = lietraj.EvalOmega(t0)
         omega1 = lietraj.EvalOmega(t1)
-        shortcutrtraj = lie.InterpolateSO3(R_beg,R_end,omega0,omega1, T)
+        shortcutrtraj = Lie.InterpolateSO3(R_beg,R_end,omega0,omega1, T)
 
         t_beg = transtraj.Eval(t0)
         t_end = transtraj.Eval(t1)
         v_beg = transtraj.Evald(t0)
         v_end = transtraj.Evald(t1)
         
-        shortcuttranstraj = Trajectory.PiecewisePolynomialTrajectory.FromString(TrajString3rdDegree(t_beg,t_end,v_beg,v_end, T))
+        shortcuttranstraj = Trajectory.PiecewisePolynomialTrajectory.\
+        FromString(TrajString3rdDegree(t_beg, t_end, v_beg, v_end, T))
         
         shortcutse3traj = SE3TrajFromTransandSO3(shortcuttranstraj, shortcutrtraj)
         #check feasibility only for the new portion
         
-        isincollision = CheckCollisionSE3Traj(robot, shortcuttranstraj, shortcutrtraj, R_beg, discrtimestep)
+        isincollision = CheckCollisionSE3Traj(robot, shortcuttranstraj, 
+                                              shortcutrtraj, R_beg, discrtimestep)
         if (not isincollision):
             a,b,c = ComputeSE3Constraints(shortcutse3traj, taumax, fmax, discrtimestep)
-            topp_inst = TOPP.QuadraticConstraints(shortcutse3traj, discrtimestep, vmax, list(a), list(b), list(c))
+            topp_inst = TOPP.QuadraticConstraints(shortcutse3traj, discrtimestep, 
+                                                  vmax, list(a), list(b), list(c))
             x = topp_inst.solver
             ret = x.RunComputeProfiles(1,1) 
             if (ret == 1):
                 x.resduration
                 ## check whether the new one has shorter duration
                 if (x.resduration + 0.1 < T): #skip if not shorter than 0.1 s
-                    
                     x.ReparameterizeTrajectory()
                     x.WriteResultTrajectory()
-                    TOPPed_shortcutse3traj = Trajectory.PiecewisePolynomialTrajectory.FromString(x.restrajectorystring)
-                    TOPPed_shortcuttranstraj, TOPPed_shortcutrtraj = TransRotTrajFromSE3Traj(TOPPed_shortcutse3traj)
-                    newlietraj = ReplaceTrajectorySegment(lietraj, TOPPed_shortcutrtraj , t0, t1)
+                    TOPPed_shortcutse3traj = Trajectory.PiecewisePolynomialTrajectory.\
+                    FromString(x.restrajectorystring)
+                    
+                    TOPPed_shortcuttranstraj, TOPPed_shortcutrtraj = \
+                    TransRotTrajFromSE3Traj(TOPPed_shortcutse3traj)
+                    
+                    newlietraj = ReplaceTrajectorySegment\
+                    (lietraj, TOPPed_shortcutrtraj , t0, t1)
                    
-                    newtranstraj = ReplaceTransTrajectorySegment(transtraj, TOPPed_shortcuttranstraj, t0,t1)
+                    newtranstraj = ReplaceTransTrajectorySegment\
+                    (transtraj, TOPPed_shortcuttranstraj, t0, t1)
 
                     #####################################################
-                    newrtraj = Trajectory.PiecewisePolynomialTrajectory.FromString(TrajStringFromTrajList(newlietraj.trajlist))
-                    newse3traj = SE3TrajFromTransandSO3(newtranstraj,newrtraj)
+                    newrtraj = Trajectory.PiecewisePolynomialTrajectory.FromString\
+                    (TrajStringFromTrajList(newlietraj.trajlist))
+                    
+                    newse3traj = SE3TrajFromTransandSO3(newtranstraj, newrtraj)
 
                     Rlist = newlietraj.Rlist
                     rtraj = newrtraj
@@ -300,10 +321,10 @@ def SE3Shortcut(robot, taumax, fmax, vmax, se3traj, Rlist, maxiter, expecteddura
                     dur = se3traj.duration
 
                     #print "*******************************************"
-                    print "Success at iteration",it + 1,":", t0, t1,"Deta_t:", t1 - t0 - x.resduration
+                    print 'Success at iteration {0}; Delta t = {1}'.format\
+                    (it + 1, t1 - t0 - x.resduration)
+                    
                     attempt += 1
-                    #print "T:", nnotretimable, "; S:", nnotshorter , "; C:", ncollision , "; OK:", attempt
-                    #print "*******************************************"
                 else:
                     # print "Not shorter"
                     nnotshorter += 1
@@ -314,21 +335,21 @@ def SE3Shortcut(robot, taumax, fmax, vmax, se3traj, Rlist, maxiter, expecteddura
             # print "Collision"
             ncollision += 1
 
-            # print "T:", nnotretimable, "; S:", nnotshorter , "; C:", ncollision , "; OK:", attempt
-    print "\033[1;32mT:", nnotretimable, "; S:", nnotshorter , "; C:", ncollision , "; OK:", attempt, "\033[0m"
-    print "\033[1;32m", originalduration - se3traj.duration ,"sec. shorter\033[0m"
+    print Colorize('Attempt: T = {0}, S = {1}, C = {2}, OK = {3}'.format\
+                       (nnotretimable, nnotshorter, ncollision, attempt), 'yellow')
+    print Colorize('New trajectory is {0} sec. shorter'.format\
+                       (originalduration - se3traj.duration), 'green')
     t_sc_end = time.time()
-    print "\033[1;32mRunning time:",t_sc_end-t_sc_start, "sec.\033[0m"
+    print Colorize('Running time = {0} sec.'.format(t_sc_end-t_sc_start), 'green')
     
     return se3traj, Rlist
 
 
-
 #############################
-
 def ReplaceTransTrajectorySegment(originaltranstraj, transtrajsegment, t0,t1):
-    """ReplaceTransTrajectorySegment replaces the segment (t0, t1) in the (arbitrary degree) originaltranstraj 
-    with an (arbitrary degree) transtrajsegment.
+    """ReplaceTransTrajectorySegment replaces the segment (t0, t1) in
+    the (arbitrary degree) originaltranstraj with an (arbitrary
+    degree) transtrajsegment.
     """
     assert(t1 > t0)
     
@@ -365,9 +386,11 @@ def ReplaceTransTrajectorySegment(originaltranstraj, transtrajsegment, t0,t1):
         ## b is a poly1d object
         b = b*a.coeffs[0] ## multiply back by a_n *** this multiplication does not commute
         
-        newpoly = Trajectory.Polynomial(b.coeffs.tolist()[::-1]) ## TOPP convention is weak-term-first
+        ## TOPP convention is weak-term-first
+        newpoly = Trajectory.Polynomial(b.coeffs.tolist()[::-1]) 
         newpoly_list.append(newpoly)
-    remchunk1 = Trajectory.Chunk(originaltranstraj.chunkslist[i1].duration - rem1, newpoly_list)
+    remchunk1 = Trajectory.Chunk(originaltranstraj.chunkslist[i1].duration - rem1, 
+                                 newpoly_list)
     newchunkslist.append(remchunk1)
     
     ## insert remaining chunks
@@ -378,10 +401,7 @@ def ReplaceTransTrajectorySegment(originaltranstraj, transtrajsegment, t0,t1):
     return Trajectory.PiecewisePolynomialTrajectory(newchunkslist)
 
 
-
-
 ############################# traj collision checking ###############################
-
 def CheckCollisionTraj(robot, trajectory, R_beg, checkcollisiontimestep = 1e-3):
     """CheckCollisionTraj accepts a robot and a trajectory object as its inputs.
        (checkcollisiontimestep is set to 1e-3 as a default value)
@@ -392,24 +412,24 @@ def CheckCollisionTraj(robot, trajectory, R_beg, checkcollisiontimestep = 1e-3):
     for s in np.arange(0, traj.duration, checkcollisiontimestep):
         with robot:
             transformation = eye(4)
-            transformation[0:3,0:3] = lie.EvalRotation(R_beg, traj, s)
+            transformation[0:3,0:3] = Lie.EvalRotation(R_beg, traj, s)
             robot.SetTransform(transformation)           
-            isincollision = (env.CheckCollision(robot, CollisionReport()))
+            isincollision = (env.CheckCollision(robot, orpy.CollisionReport()))
             #print  "s =", s, " ", isincollision
             if (isincollision):
                 return True
     with robot:
         robot.SetTransform(transformation)
-        isincollision = (env.CheckCollision(robot, CollisionReport()))
+        isincollision = (env.CheckCollision(robot, orpy.CollisionReport()))
         if (isincollision):
             return True
         else:
             return False
 
 
-
 ############################# SHORTCUTING SO3 ############################
-def Shortcut(robot, taumax, vmax, lietraj,  maxiter, expectedduration = -1,  meanduration = 0, upperlimit = -1, inertia = None, trackingplot = None):
+def Shortcut(robot, taumax, vmax, lietraj,  maxiter, expectedduration=-1, 
+             meanduration=0, upperlimit=-1, inertia=None, trackingplot=None):
     if trackingplot == 1:
         plt.axis([0, maxiter, 0, lietraj.duration])
         plt.ion()
@@ -451,29 +471,31 @@ def Shortcut(robot, taumax, vmax, lietraj,  maxiter, expectedduration = -1,  mea
         if trackingplot == 1:
             plt.scatter(it, lietraj.duration)
             plt.draw()
-        if (expectedduration > 0): # check, if newlietraj.duration is short enough, stop SHORTCUTING
+        if (expectedduration > 0):
             if (lietraj.duration < expectedduration):
-                print "\033[1;32mTrajectory's duration is already shorter than expected time --> stop shortcuting\033[0m"
+                print Colorize('Trajectory duration is already too short', 'yellow')
+                print Colorize('Stop shortcutting', 'yellow')
                 break
+            
         if (dur < discrtimestep):
             print "[Utils::Shortcut] trajectory duration is less than discrtimestep.\n"
             break ## otherwise, this will cause an error in TOPP        
         
         ## select an interval for shortcutting
-        t0 = random.rand()* dur
+        t0 = _RNG.random()* dur
         
         if meanduration == 0:
             meanduration = dur - t0
             
-        T = random.rand()*min(meanduration,dur - t0)
+        T = _RNG.random()*min(meanduration,dur - t0)
         t1 = t0 + T
 
         while (T < 2.0*discrtimestep):
-            t0 = random.rand()*dur
+            t0 = _RNG.random()*dur
             if meanduration == 0:
                 meanduration = dur - t0
                 
-            T = random.rand()*min(meanduration, dur - t0)
+            T = _RNG.random()*min(meanduration, dur - t0)
             t1 = t0 + T
 
             if t1 > upperlimit:
@@ -492,16 +514,18 @@ def Shortcut(robot, taumax, vmax, lietraj,  maxiter, expectedduration = -1,  mea
         omega0 = lietraj.EvalOmega(t0)
         omega1 = lietraj.EvalOmega(t1)
 
-        shortcuttraj = lie.InterpolateSO3(R_beg,R_end,omega0,omega1, T)
+        shortcuttraj = Lie.InterpolateSO3(R_beg,R_end,omega0,omega1, T)
         #check feasibility only for the new portion
 
         isincollision = CheckCollisionTraj(robot, shortcuttraj, R_beg, discrtimestep)
         if (not isincollision):
-            # a,b,c = lie.ComputeSO3Constraints(shortcuttraj, taumax, discrtimestep)
-            abc = TOPPbindings.RunComputeSO3Constraints(str(shortcuttraj),constraintsstring)# discrtimestep)
-            a,b,c = lie.Extractabc(abc)
+            # a,b,c = Lie.ComputeSO3Constraints(shortcuttraj, taumax, discrtimestep)
+            abc = TOPPbindings.RunComputeSO3Constraints(str(shortcuttraj),
+                                                        constraintsstring)
+            a,b,c = Lie.Extractabc(abc)
 
-            topp_inst = TOPP.QuadraticConstraints(shortcuttraj, discrtimestep, vmax, list(a), list(b), list(c))
+            topp_inst = TOPP.QuadraticConstraints(shortcuttraj, discrtimestep, vmax, 
+                                                  list(a), list(b), list(c))
             x = topp_inst.solver
             ret = x.RunComputeProfiles(1,1) 
             if (ret == 1):
@@ -511,16 +535,18 @@ def Shortcut(robot, taumax, vmax, lietraj,  maxiter, expectedduration = -1,  mea
                     
                     x.ReparameterizeTrajectory()
                     x.WriteResultTrajectory()
-                    TOPPed_shortcuttraj = Trajectory.PiecewisePolynomialTrajectory.FromString(x.restrajectorystring)
+                    TOPPed_shortcuttraj = Trajectory.PiecewisePolynomialTrajectory.\
+                    FromString(x.restrajectorystring)
 
-                    newlietraj = ReplaceTrajectorySegment(lietraj,TOPPed_shortcuttraj, t0, t1)  
+                    newlietraj = ReplaceTrajectorySegment\
+                    (lietraj, TOPPed_shortcuttraj, t0, t1)  
                     lietraj = newlietraj
                     dur = lietraj.duration
                     #print "*******************************************"
-                    print "Success at iteration",it + 1,":", t0, t1,"Deta_t:", t1 - t0 - x.resduration
+                    print 'Success at iteration {0}; Delta t = {1}'.format\
+                    (it + 1, t1 - t0 - x.resduration)
+                    
                     attempt += 1
-                    #print "T:", nnotretimable, "; S:", nnotshorter , "; C:", ncollision , "; OK:", attempt
-                    #print "*******************************************"
                 else:
                     # print "Not shorter"
                     nnotshorter += 1
@@ -531,18 +557,20 @@ def Shortcut(robot, taumax, vmax, lietraj,  maxiter, expectedduration = -1,  mea
             # print "Collision"
             ncollision += 1
 
-            # print "T:", nnotretimable, "; S:", nnotshorter , "; C:", ncollision , "; OK:", attempt
-        
-    print "\033[1;32mT:", nnotretimable, "; S:", nnotshorter , "; C:", ncollision , "; OK:", attempt, "\033[0m"
-    print "\033[1;32m", originalduration - lietraj.duration ,"sec. shorter\033[0m"
+    print Colorize('Attempt: T = {0}, S = {1}, C = {2}, OK = {3}'.format\
+                       (nnotretimable, nnotshorter, ncollision, attempt), 'yellow')
+    print Colorize('New trajectory is {0} sec. shorter'.format\
+                       (originalduration - lietraj.duration), 'green')
     t_sc_end = time.time()
-    print "\033[1;32mRunning time:",t_sc_end-t_sc_start, "sec.\033[0m"
-
+    print Colorize('Running time = {0} sec.'.format(t_sc_end-t_sc_start), 'green')
+    
     return lietraj
+
 
 ################## REPLACE TRAJECTORY SEGMENT SO3 #############################
 def ReplaceTrajectorySegment(originallietraj, trajsegment, t0, t1):
-    """ReplaceTrajectorySegment replaces the segment (t0, t1), it returns a LieTraj variable (Rotationlist and Trajectorylist)   """
+    """ReplaceTrajectorySegment replaces the segment (t0, t1), it
+    returns a LieTraj variable (Rotationlist and Trajectorylist) """
     assert(t1 > t0)
     newtrajlist = []
     newRlist = []
@@ -567,7 +595,8 @@ def ReplaceTrajectorySegment(originallietraj, trajsegment, t0, t1):
         for c in originallietraj.trajlist[i0].chunkslist[0: ic0]:
             newchunkslist.append(c)
           # remainderchunk0
-    remchunk0 = Trajectory.Chunk(remc0, originallietraj.trajlist[i0].chunkslist[ic0].polynomialsvector)
+    remchunk0 = Trajectory.Chunk(remc0, originallietraj.trajlist[i0].\
+                                     chunkslist[ic0].polynomialsvector)
     newchunkslist.append(remchunk0)
 
     remtraj0 = Trajectory.PiecewisePolynomialTrajectory(newchunkslist) 
@@ -579,8 +608,6 @@ def ReplaceTrajectorySegment(originallietraj, trajsegment, t0, t1):
     newtrajlist.append(trajsegment)
     newRlist.append(originallietraj.EvalRotation(t0))
 
-
-######################################
     ## For the traj right after the trajsegment 
     ## remaindertraj1
     newchunkslist = []
@@ -599,21 +626,24 @@ def ReplaceTrajectorySegment(originallietraj, trajsegment, t0, t1):
         ## b is a poly1d object
         b = b*a.coeffs[0] ## multiply back by a_n *** this multiplication does not commute
         
-        newpoly = Trajectory.Polynomial(b.coeffs.tolist()[::-1]) ## TOPP convention is weak-term-first
+        ## TOPP convention is weak-term-first
+        newpoly = Trajectory.Polynomial(b.coeffs.tolist()[::-1])
         newpoly_list.append(newpoly)
-    remchunk1 = Trajectory.Chunk(originallietraj.trajlist[i1].chunkslist[ic1].duration - remc1, newpoly_list)
+    remchunk1 = Trajectory.Chunk\
+    (originallietraj.trajlist[i1].chunkslist[ic1].duration - remc1, newpoly_list)
+    
     newchunkslist.append(remchunk1)
 
     ## insert remaining chunk 
     if ic1 < len(originallietraj.trajlist[i1].chunkslist) - 1:
-        for c in originallietraj.trajlist[i1].chunkslist[ic1 + 1: len(originallietraj.trajlist[i1].chunkslist)]:
+        for c in originallietraj.trajlist[i1].chunkslist\
+            [ic1 + 1: len(originallietraj.trajlist[i1].chunkslist)]:
             newchunkslist.append(c)
     ## insert 
     remtraj1 = Trajectory.PiecewisePolynomialTrajectory(newchunkslist)
     newtrajlist.append(remtraj1)
-    newRlist.append(originallietraj.Rlist[i1])##ROTATION Should be at originallietraj.Rlist[i1] ##
+    newRlist.append(originallietraj.Rlist[i1])
 
-###############################
     # insert the remainder trajectoris
     if i1 < len(originallietraj.trajlist)-1:
         Rindex = i1+1
@@ -622,10 +652,7 @@ def ReplaceTrajectorySegment(originallietraj, trajsegment, t0, t1):
             newRlist.append(originallietraj.Rlist[Rindex])
             Rindex += 1
  
-    return lie.LieTraj(newRlist, newtrajlist)
-
-
-
+    return Lie.LieTraj(newRlist, newtrajlist)
 
 
 ########################### FROM TRAJ LIST TO TRAJSTRING #############################
@@ -637,6 +664,7 @@ def TrajStringFromTrajList(trajlist):
     trajectorystring = string.lstrip(trajectorystring) # remove leading "\n"
     return trajectorystring
 
+
 ########################## SAVE LIETRAJ as TEXT_FILEs ################################
 ## return 2 files: Rlistfilename.txt and trajlistfilename.txt
 def SaveLietrajAsTextFiles(lietraj, RlistFilename, trajlistFilename):
@@ -644,14 +672,14 @@ def SaveLietrajAsTextFiles(lietraj, RlistFilename, trajlistFilename):
     txtRlist = ""
     for i in range(len(lietraj.Rlist)):
         temp = lietraj.Rlist[i]
-        for row in range(0,3):
+        for row in range(0, 3):
             separator = ""
-            for col in range(0,3):
+            for col in range(0, 3):
                 txtRlist += separator
                 txtRlist += str(temp[row,col])
                 separator = " "
             txtRlist += "\n"
-    with open(RlistFilename,"wt") as file:
+    with open(RlistFilename, "wt") as file:
         file.write(txtRlist)
     ## Save trajlist
     txttrajlist = ""
@@ -659,10 +687,11 @@ def SaveLietrajAsTextFiles(lietraj, RlistFilename, trajlistFilename):
         txttrajlist += "t\n"
         txttrajlist += str(lietraj.trajlist[i]) 
         txttrajlist += "\n"
-    with open(trajlistFilename,"wt") as file:
+    with open(trajlistFilename, "wt") as file:
         file.write(txttrajlist)
     ## if saved successfully, return true. If not, return false and notify
     return True
+
 
 ######### READ Rlistfilename.txt and trajlistfilename.txt and RETURN a LIETRAJ ######
 def ReadLieTrajFiles(Rlistfilename, trajlistfilename):
@@ -701,7 +730,7 @@ def ReadLieTrajFiles(Rlistfilename, trajlistfilename):
         traj = Trajectory.PiecewisePolynomialTrajectory.FromString(t_str)
         trajlist.append(traj)
 
-    return  lie.LieTraj(Rlist, trajlist)
+    return  Lie.LieTraj(Rlist, trajlist)
 
 ################### SAVE SE3 traj########################
 ## return 2 files: rlistFilename.txt and se3listFilename.txt
@@ -767,13 +796,16 @@ def ReadSE3TrajFiles(rlistfilename, se3trajfilename):
     for t_str in se3trajstringlist:
         se3traj = Trajectory.PiecewisePolynomialTrajectory.FromString(t_str)
         se3trajlist.append(se3traj)
-    se3traj = Trajectory.PiecewisePolynomialTrajectory.FromString(TrajStringFromTrajList(se3trajlist))
+    se3traj = Trajectory.PiecewisePolynomialTrajectory.FromString\
+    (TrajStringFromTrajList(se3trajlist))
     return  se3traj, rlist
 
+
 #########################PLOT SE3 ###################################
-def PlotSE3(se3traj, rlist,  dt = 0.01, figstart=0,vmax=[],accelmax=[],taumax=[],fmax=[], inertia = None, m = None):
+def PlotSE3(se3traj, rlist, dt = 0.01, figstart=0,
+            vmax=[], accelmax=[], taumax=[], fmax=[], inertia=None, m=None):
     transtraj, rottraj = TransRotTrajFromSE3Traj(se3traj)
-    lietraj = lie.SplitTraj2(rlist, rottraj)
+    lietraj = Lie.SplitTraj2(rlist, rottraj)
     
     lietraj.Plot(dt,figstart,vmax[:3],accelmax,taumax,inertia)
     
@@ -805,6 +837,7 @@ def PlotSE3(se3traj, rlist,  dt = 0.01, figstart=0,vmax=[],accelmax=[],taumax=[]
         plt.plot([0, transtraj.duration],[v, v], '-.',color = 'k')
     for v in fmax[:3]:
         plt.plot([0, transtraj.duration],[-v, -v], '-.',color = 'k')
+
 
 ###########################CheckIntersection ##########################
 def CheckIntersection(interval0, interval1):
