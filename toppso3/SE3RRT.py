@@ -485,6 +485,20 @@ class RRTPlanner():
         prev_it = self.iterations
         it = 0
 
+        t_begin = time.time()
+        if (self.Connect() == REACHED):
+            print Colorize('Path found', 'green')
+            print Colorize('    Total number of iterations : {0}'.format\
+                               (self.iterations), 'green')
+            t_end = time.time()
+            t += t_end - t_begin
+            self.runningtime += t
+            print Colorize('    Total running time : {0} sec.'.format\
+                               (self.runningtime), 'green')
+            self.result = True
+            return self.result
+
+
         while (t < allottedtime):
             it += 1
             self.iterations += 1
